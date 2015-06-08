@@ -1,32 +1,27 @@
 var Oyster = require('oyster');
 var request = require('request');
-var jsdom = require('jsdom');
-var $ = require('jquery')(jsdom.jsdom().parentWindow);
-$.fn.tableToJSON = require('./tabletojson')($);
+var $ = require('cheerio');
+var tabletojson = require('./tabletojson');
 
 Oyster.Oyster.prototype.history = function(callback) {
   var oyster = this;
-  /**
-  * Visiting entry.do before journeyDetailsPrint.do does some cookie stuff
-  * that enables us to view the journey history.
-  **/
-  request({
-    uri: 'https://oyster.tfl.gov.uk/oyster/entry.do',
+
+  oyster.request({
+    uri: 'https://oyster.tfl.gov.uk/oyster/journeyDetailsPrint.do',
     jar: oyster.jar
-  }, function(err, res, body) {
-    request({
-      uri: 'https://oyster.tfl.gov.uk/oyster/journeyDetailsPrint.do',
-      followRedirect: true,
-      headers: {
-        'referrer': 'https://oyster.tfl.gov.uk/oyster/journeyHistory.do',
-        'user-agent': 'Mozilla/5.0 (Windows; U; Windows NT 5.0; en-US; rv:1.4) Gecko/20030624 Netscape/7.1 (ax)'
-      },
-      jar: oyster.jar
-    }, function(err, res, body) {
-      if(err) return callback(err);
-      toTable($(body).find('table.journeyhistory'), callback);
-    });
-  }.bind(this));
+  }, function (err, res, body) {
+    if (err) {
+      return callback(err);
+    }
+
+    var journeyMatch = body.match(/Journey Statement/);
+
+    if (journeyMatch) {
+      toTable($('table.journeyhistory', body), callback);
+    } else {
+      return callback(new Error('Unknown Response: TFL have probably changed their website again'))
+    }
+  });
 };
 
 function toTable(html, callback) {
@@ -35,7 +30,7 @@ function toTable(html, callback) {
     return false;
   }
 
-  var before = $(html).tableToJSON();
+  var before = tabletojson.convert('<table>' + html.html() + '</table>')[0];
   var after = [];
   var currentDate;
   for (var i in before) {
@@ -60,6 +55,7 @@ function toTable(html, callback) {
 module.exports = function(username, password, callback) {
   var oyster = Oyster(username, password, function(err) {
     if(err) throw err;
+
     oyster.history(callback);
   });
 };

@@ -20,9 +20,9 @@
   },
   "homepage": "https://github.com/charliedowler/oyster-history",
   "dependencies": {
+    "cheerio": "0.18.0",
+    "jQuery": "~1.7.4",
     "oyster": "~0.2.0",
-    "request": "~2.29.0",
-    "jsdom": "~0.10.1",
-    "jquery": "^2.1.1"
+    "request": "~2.29.0"
   }
 }
