@@ -1,73 +1,69 @@
-// https://github.com/lightswitch05/table-to-json
-var tableToJSON = function($) {
-  return function(opts) {
+// https://github.com/iaincollins/tabletojson
+var Q = require('q');
+var cheerio = require('cheerio');
+var request = require('request');
 
-    // Set options
-    var defaults = {
-      ignoreColumns: [],
-      onlyColumns: null,
-      ignoreHiddenRows: true,
-      headings: null
-    };
-    opts = $.extend(defaults, opts);
+exports.convert = convert;
 
-    var notNull = function(value) {
-      if (value !== undefined && value !== null) {
-        return true;
-      }
-      return false;
-    };
+function convert(html) {
+    var jsonResponse = [];
+    var $ = cheerio.load(html);
 
-    var ignoredColumn = function(index) {
-      if (notNull(opts.onlyColumns)) {
-        return $.inArray(index, opts.onlyColumns) === -1;
-      }
-      return $.inArray(index, opts.ignoreColumns) !== -1;
-    };
+    $('table').each(function(i, table) {
+        var tableAsJson = [];
+        // Get column headings
+        // @fixme Doesn't support vertical column headings.
+        // @todo Try to support badly formated tables.
+        var columnHeadings = [];
+        $(table).find('tr').each(function(i, row) {
+            $(row).find('th').each(function(j, cell) {
+                columnHeadings[j] = $(cell).text().trim();
+            });
+        });
 
-    var arraysToHash = function(keys, values) {
-      var result = {};
-      $.each(values, function(index, value) {
-        if (index < keys.length) {
-          result[keys[index]] = value;
-        }
-      });
-      return result;
-    };
+        // Fetch each row
+        $(table).find('tr').each(function(i, row) {
+            var rowAsJson = {};
+            $(row).find('td').each(function(j, cell) {
+                if (columnHeadings[j]) {
+                    rowAsJson[ columnHeadings[j] ] = $(cell).text().trim();
+                } else {
+                    rowAsJson[j] = $(cell).text().trim();
+                }
+            });
+            
+            // Skip blank rows
+            if (JSON.stringify(rowAsJson) != '{}')
+                tableAsJson.push(rowAsJson);
+        });
+        
+        // Add the table to the response
+        if (tableAsJson.length != 0)
+            jsonResponse.push(tableAsJson);
+    });
+    return jsonResponse;
+}
 
-    var rowValues = function(row) {
-      var result = [];
-      $(row).children("td,th").each(function(cellIndex, cell) {
-        if (!ignoredColumn(cellIndex)) {
-          var override = $(cell).data("override");
-          var value = $.trim($(cell).text());
-          result[result.length] = notNull(override) ? override : value;
-        }
-      });
-      return result;
-    };
+exports.convertUrl = function(url, callback) {
+    if (typeof(callback) === "function") {
+        // Use a callback (if passed)
+        fetchUrl(url)
+        .then(function(html) {
+            callback.call( this, convert(html) );
+        });
+    } else {
+        // If no callback, return a promise
+        return fetchUrl(url)
+        .then(function(html) {
+            return convert(html);
+        });
+    }
+}
 
-    var getHeadings = function(table) {
-      var firstRow = table.find("tr:first").first();
-      return notNull(opts.headings) ? opts.headings : rowValues(firstRow);
-    };
-
-    var construct = function(table, headings) {
-      var result = [];
-      table.children("tbody,*").children("tr").each(function(rowIndex, row) {
-        if (rowIndex !== 0 || notNull(opts.headings)) {
-          if ($(row).is(":visible") || !opts.ignoreHiddenRows) {
-            result[result.length] = arraysToHash(headings, rowValues(row));
-          }
-        }
-      });
-      return result;
-    };
-
-    // Run
-    var headings = getHeadings(this);
-    return construct(this, headings);
-  };
-};
-
-module.exports = tableToJSON;
+function fetchUrl(url, callback) {
+    var deferred = Q.defer();
+    request(url, function (error, response, body) {
+        deferred.resolve(body);
+    });
+    return deferred.promise;
+}
